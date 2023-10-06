@@ -1,0 +1,313 @@
+// [Reference]
+// Trusted Execution Environment Provisioning (TEEP) Protocol draft-ietf-teep-protocol-15
+// Encrypted Payloads in SUIT Manifests draft-ietf-suit-firmware-encryption-13
+
+theory TEEP_SUIT_SAMPLE
+begin
+
+builtins: hashing, signing, symmetric-encryption, asymmetric-encryption
+
+// Registering a public key
+rule Register_pkAgent:
+    [ Fr(~ltkAgent) ]
+  -->
+    [ !Ltk($Agent, ~ltkAgent), !Pk($Agent, pk(~ltkAgent)) ]
+
+rule Get_pk_Agent:
+    [ !Pk(Agent, pkAgent) ]
+  -->
+    [ Out(pkAgent) ]
+
+// Compromising an agent's long-term key
+rule Reveal_ltk_Agent:
+    [ !Ltk(Agent, ltkAgent) ] --[ LtkReveal(Agent) ]-> [ Out(ltkAgent) ]
+
+
+// query request / response
+// Start a new thread executing the TAM role, choosing the TEEPAgent non-deterministically.
+rule TAM_query_process_1:
+    [ !Ltk($TAM, ~ltkTAM)             // lookup the private-key
+    , !Pk($TEEPAgent, pkTEEPAgent)
+    , Fr(~tokenTAM)         // choose fresh tokenTAM
+    ]
+  --[ RequestQueryMessage($TAM, $TEEPAgent, ~tokenTAM) ]-> 
+    [ State_TAM_query_session_1( $TAM, ~ltkTAM, $TEEPAgent, pkTEEPAgent, ~tokenTAM )  // Store TEEPAgent session state for the next step of thread
+    , Out(<$TAM, $TEEPAgent, ~tokenTAM>)  // Send the tokenTAM to the TEEPAgent
+    ]
+
+rule TAM_query_process_2:
+    [ State_TAM_query_session_1($TAM_s, ltkTAM, $TEEPAgent_s, pkTEEPAgent, tokenTAMsent)   // Retrieve TEEPAgent session state from the previous step
+    , In(<<message2_r, $TEEPAgent_r, $TAM_r, tokenTAMrecv>,sigTEEPAgent>)
+    ]
+    --[ ReceiveQueryMessage($TAM_r, $TEEPAgent_r, tokenTAMrecv)  
+      , TokenTAM($TAM_s, $TEEPAgent_s, tokenTAMsent)
+      , Eq(message2_r,'message2') 
+      , Eq(verify(sigTEEPAgent,<message2_r, $TEEPAgent_r, $TAM_r, tokenTAMrecv>,pkTEEPAgent),true) //signature verification
+      , Eq($TAM_r,$TAM_s) //content validation
+      , Eq($TEEPAgent_r,$TEEPAgent_s) //content validation
+      , Eq(tokenTAMrecv,tokenTAMsent) //content validation
+      , AuthenticQueryMessage($TEEPAgent_s,<message2_r, $TEEPAgent_r, $TAM_r, tokenTAMrecv>), HonestQueryMessage($TAM_s), HonestQueryMessage($TEEPAgent_s)
+    ]->
+    [ State_TAM_query_session_2($TAM_s, ltkTAM, $TEEPAgent_s, pkTEEPAgent, tokenTAMsent) ]  // was setup with TEEPAgent
+
+// A TEEPAgent thread answering in one-step to a iot_secret setup request from some TAM.
+rule TEEPAgent_query_process_1:
+  let message = <'message2', $TEEPAgent, $TAM, tokenTAM> in
+    [ !Ltk($TEEPAgent, ~ltkTEEPAgent)             // lookup the private-key
+    , !Pk($TAM, pkTAM)
+    , In( <$TAM, $TEEPAgent, tokenTAM> )                // receive a request  
+    ]
+  --[ ResponseQueryMessage($TEEPAgent,$TAM,tokenTAM), TokenTEEPAgent($TEEPAgent, $TAM, tokenTAM) ]->  
+  [ State_TEEPAgent_query_session_1($TEEPAgent, ~ltkTEEPAgent, $TAM, pkTAM, tokenTAM) //save the session state
+  , Out(<message,sign(message,~ltkTEEPAgent)>)
+  ]
+
+
+// teep request / response
+// Start a new thread executing the TAM role, choosing the TEEPAgent non-deterministically.
+rule TAM_teep_process_1:
+  let encrypted_iot_secret = senc(~iot_secret, ~cek) in
+    [
+    //State_TAM_query_session_2(TAM, $TEEPAgent, pkTEEPAgent, tokenTAM)
+    //, //teep protocol is stateless, if not, verification path increases.
+      Fr(~tokenTAMteep)
+    ,
+      !Ltk($TAM, ~ltkTAM)
+    , !Pk($TEEPAgent, pkTEEPAgent)   // lookup public-key of TEEPAgent
+    , Fr(~iot_secret)         // choose fresh iot_secret
+    , Fr(~cek)         // content encryption key
+    ]
+  --[ RequestTeepMessage($TAM, $TEEPAgent, ~tokenTAMteep) ]->  
+    [ State_TAM_teep_session_1( $TAM, ~ltkTAM, $TEEPAgent, pkTEEPAgent, ~tokenTAMteep, ~iot_secret, ~cek )  // Store TEEPAgent session state for the next step of thread
+    , Out(<$TAM, $TEEPAgent, ~tokenTAMteep, encrypted_iot_secret, aenc(~cek, pkTEEPAgent)>)  // Send the encrypted iot_secret to the TEEPAgent
+    ]
+
+rule TAM_teep_process_2:
+    [ State_TAM_teep_session_1($TAM_s, ltkTAM, $TEEPAgent_s, pkTEEPAgent, tokenTAMteep_sent, iot_secret_sent, cek_sent)   // Retrieve TEEPAgent session state from the previous step
+    , In(<<message4_r, $TEEPAgent_r, $TAM_r, tokenTAMteep_recv>,sigTEEPAgent>)
+    ]
+    --[ ReceiveTeepMessage($TAM_r, $TEEPAgent_r, tokenTAMteep_recv)
+      , SecretTAM($TAM_s, $TEEPAgent_s, iot_secret_sent)
+      , Eq(message4_r,'message4') 
+      , Eq(verify(sigTEEPAgent,<message4_r, $TEEPAgent_r, $TAM_r, tokenTAMteep_recv>,pkTEEPAgent),true) //signature verification
+      , Eq($TAM_r,$TAM_s) //content validation
+      , Eq($TEEPAgent_r,$TEEPAgent_s) //content validation
+      , Eq(tokenTAMteep_recv,tokenTAMteep_sent) //content validation
+      , AuthenticTeepMessage($TEEPAgent_s,<message4_r, $TEEPAgent_r, $TAM_r, tokenTAMteep_recv>), HonestTeepMessage($TAM_s), HonestTeepMessage($TEEPAgent_s)
+    ]->
+    [ State_TAM_teep_session_2($TAM_s, ltkTAM, $TEEPAgent_s, pkTEEPAgent, tokenTAMteep_sent, iot_secret_sent) ]  // was setup with TEEPAgent
+
+// A TEEPAgent thread answering in one-step to a iot_secret setup request from some TAM.
+rule TEEPAgent_teep_process_1:
+  let message = <'message4', $TEEPAgent, $TAM, tokenTAMteep> in
+    [
+    //State_TEEPAgent_query_session_1($TEEPAgent, TAM, pkTAM, tokenTAM)
+    //, //teep protocol is stateless, if not, verification path increases.
+      !Ltk($TEEPAgent, ~ltkTEEPAgent)             // lookup the private-key
+    , !Pk($TAM, pkTAM)
+    , In( <$TAM, $TEEPAgent, tokenTAMteep, encrypted_iot_secret, encrypted_cek> )  // receive a request  
+    ]
+  --[ ResponseTeepMessage($TEEPAgent, $TAM, tokenTAMteep), SecretTEEPAgent($TEEPAgent, $TAM, sdec(encrypted_iot_secret,adec(encrypted_cek,~ltkTEEPAgent))) ]->  
+  [ State_TEEPAgent_teep_session_1($TEEPAgent, ~ltkTEEPAgent, $TAM, pkTAM, tokenTAMteep, sdec(encrypted_iot_secret,adec(encrypted_cek,~ltkTEEPAgent))) //decrypt and save the iot_secret 
+  , Out(<message,sign(message,~ltkTEEPAgent)>)
+  ]
+
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @i ==> x = y"
+
+
+
+lemma query_communication_alive: exists-trace
+        "Ex TAM TEEPAgent tokenTAM #i #j #k.
+                RequestQueryMessage(TAM, TEEPAgent, tokenTAM) @i
+                & ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @j & i < j
+                & ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @k & j < k "
+
+lemma teep_communication_alive: exists-trace
+        "Ex TAM TEEPAgent tokenTAM #i #j #k.
+                RequestTeepMessage(TAM, TEEPAgent, tokenTAM) @i
+                & ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @j & i < j
+                & ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @k & j < k "
+
+
+// Since token is sent on the NW, this is false, no problem.
+lemma token_secrecy:
+        "All tokenTAM TEEPAgent TAM #k #i #j. TokenTAM(TAM, TEEPAgent, tokenTAM) @k &  TokenTEEPAgent(TEEPAgent, TAM, tokenTAM) @i & K(tokenTAM) @j ==> Ex #r. LtkReveal(TEEPAgent) @ r"
+
+lemma iot_secret_secrecy:
+        "All iot_secret TEEPAgent TAM #k #i #j. SecretTAM(TAM, TEEPAgent, iot_secret) @k & SecretTEEPAgent(TEEPAgent, TAM, iot_secret) @i & K(iot_secret) @j ==> Ex #r. LtkReveal(TEEPAgent) @ r"
+
+lemma TAM_iot_secret_secrecy:
+  " not(
+      Ex TAM TEEPAgent iot_secret #i #j.
+        /* TAM has set up a iot_secret with a TEEPAgent */
+        SecretTAM(TAM, TEEPAgent, iot_secret) @i
+        /* and the adversary knows iot_secret */
+      & K(iot_secret) @ #j
+        /* without having performed a long-term key reveal on TEEPAgent. */
+      & not(Ex #r. LtkReveal(TEEPAgent) @ r)
+    )
+  "
+
+
+/* query: authentication TAM->TEEPAgent:OK, TAM->TAM:OK, TEEPAgent->TAM:OK(injective [TBD]), can be any TAM at each request without ACL and AR. [TBD] */
+
+lemma TAM_query_auth:
+  " /* For all query request by TAM with a TEEPAgent */
+    ( All TAM TEEPAgent tokenTAM #i. ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @ #i
+       ==>
+         /* there is a TEEPAgent that answered the request */
+       ( (Ex #a. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @ a & a < i )
+         /* or the adversary performed a long-term key reveal on TEEPAgent
+            before the query request. */
+         | (Ex TEEPAgent2 #r. LtkReveal(TEEPAgent2) @ r & r < i)
+       )
+    )
+  "
+
+lemma TAM_query_auth_injective:
+  " /* For all query request by TAM with a TEEPAgent */
+    ( All TAM TEEPAgent tokenTAM #i. ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @ #i
+       ==>
+         /* there is a TEEPAgent that answered the request */
+       ( (Ex #a. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @ a & a < i
+           /* and there is no other TAM that had the same request */
+           & (All TAM2 TEEPAgent2 #j. ReceiveQueryMessage(TAM2, TEEPAgent2, tokenTAM) @ #j ==> #i = #j)
+         )
+         /* or the adversary performed a long-term key reveal on TEEPAgent
+            before the query request. */
+         | (Ex TEEPAgent3 #r. LtkReveal(TEEPAgent3) @ r & r < i)
+       )
+    )
+  "
+
+lemma TEEPAgent_query_auth:
+  " /* For all query response by TEEPAgent with a TAM */
+    ( All TEEPAgent TAM tokenTAM #i. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @ #i
+       ==>
+         /* there is a TAM that requested */
+       ( (Ex #a. RequestQueryMessage(TAM, TEEPAgent, tokenTAM) @ a & a < i )
+         /* or the adversary performed a long-term key reveal on TAM
+            before the query response. */
+         | (Ex #r. LtkReveal(TAM) @ r & r < i)
+         //| (Ex Agent #r. LtkReveal(Agent) @ r)
+       )
+    )
+  "
+
+lemma TEEPAgent_query_auth_injective:
+  " /* For all query response by TEEPAgent with a TAM */
+    ( All TEEPAgent TAM tokenTAM #i. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @ #i
+       ==>
+         /* there is a TAM that requested */
+       ( (Ex #a. RequestQueryMessage(TAM, TEEPAgent, tokenTAM) @ a & a < i
+           /* and there is no other TAM that had the same request */
+           & (All TEEPAgent2 TAM2 #j. ResponseQueryMessage(TEEPAgent2, TAM2, tokenTAM) @ #j ==> #i = #j)
+           // & not (Ex TEEPAgent2 TAM2 #j. ResponseQueryMessage(TEEPAgent2, TAM2, tokenTAM) @ #j & not (#i = #j))
+         )  
+         /* or the adversary performed a long-term key reveal on TAM
+            before the query response. */
+         | (Ex #r. LtkReveal(TAM) @ r & r < i)
+         //| (Ex TAM3 #r. LtkReveal(TAM3) @ r)
+       )
+    )
+  "
+
+lemma TAM_teep_auth:
+  " /* For all iot_secret setup by TAM with a TEEPAgent */
+    ( All TAM TEEPAgent tokenTAM #i. ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @ #i
+       ==>
+         /* there is a TEEPAgent that answered the request */
+       ( (Ex #a. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @ a & a < i )
+         /* or the adversary performed a long-term key reveal on TEEPAgent
+            before the iot_secret was setup. */
+       | (Ex TEEPAgent2 #r. LtkReveal(TEEPAgent2) @ r & r < i)
+       )
+    )
+  "
+
+lemma TAM_teep_auth_injective:
+  " /* For all iot_secret setup by TAM with a TEEPAgent */
+    ( All TAM TEEPAgent tokenTAM #i. ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @ #i
+       ==>
+         /* there is a TEEPAgent that answered the request */
+       ( (Ex #a. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @ a & a < i
+           /* and there is no other TAM that had the same request */
+           & (All TAM2 TEEPAgent2 #j. ReceiveTeepMessage(TAM2, TEEPAgent2, tokenTAM) @ #j ==> #i = #j)
+       )
+         /* or the adversary performed a long-term key reveal on TEEPAgent
+            before the iot_secret was setup. */
+       | (Ex TEEPAgent3 #r. LtkReveal(TEEPAgent3) @ r & r < i)
+       )
+    )
+  "
+
+lemma TEEPAgent_teep_auth:
+  " /* For all teep response by TEEPAgent with a TAM */
+    ( All TEEPAgent TAM tokenTAM #i. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @ #i
+       ==>
+         /* there is a TAM that requested */
+       ( (Ex #a. RequestTeepMessage(TAM, TEEPAgent, tokenTAM) @ a & a < i )
+         /* or the adversary performed a long-term key reveal on TAM
+            before the teep response. */
+         | (Ex #r. LtkReveal(TEEPAgent) @ r & r < i)
+         //| (Ex Agent #r. LtkReveal(Agent) @ r)
+       )
+    )
+  "
+
+lemma TEEPAgent_teep_auth_injective:
+  " /* For all teep response by TEEPAgent with a TAM */
+    ( All TEEPAgent TAM tokenTAM #i. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @ #i
+       ==>
+         /* there is a TAM that requested */
+       ( (Ex #a. RequestTeepMessage(TAM, TEEPAgent, tokenTAM) @ a & a < i
+           /* and there is no other TEEPAgent that had the same response */
+           & (All TEEPAgent2 TAM2 #j. ResponseTeepMessage(TEEPAgent2, TAM2, tokenTAM) @ #j ==> #i = #j)
+           // & not (Ex TEEPAgent2 TAM2 #j. ResponseTeepMessage(TEEPAgent2, TAM2, tokenTAM) @ #j & not (#i = #j))
+         )  
+         /* or the adversary performed a long-term key reveal on TAM
+            before the teep response. */
+         | (Ex #r. LtkReveal(TEEPAgent) @ r & r < i)
+         //| (Ex TAM3 #r. LtkReveal(TAM3) @ r)
+       )
+    )
+  "
+
+
+lemma TAM_query_message_honest_setup:
+  exists-trace
+  " Ex TAM TEEPAgent tokenTAM #i.
+        ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @ #i
+      & not(Ex TEEPAgent2 #r. LtkReveal(TEEPAgent2) @ r & r < i )
+  "
+
+lemma TAM_teep_message_honest_setup:
+  exists-trace
+  " Ex TAM TEEPAgent tokenTAM #i.
+        ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @ #i
+      & not(Ex TEEPAgent2 #r. LtkReveal(TEEPAgent2) @ r & r < i )
+  "
+
+lemma query_communication_alive_2:
+  exists-trace
+    "Ex TEEPAgent TAM tokenTAM #i #j. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @i & ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @j"
+
+lemma teep_communication_alive_2:
+  exists-trace
+    "Ex TEEPAgent TAM tokenTAM #i #j. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @i & ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @j"
+
+
+lemma query_message_authentication:
+    "All TAM TEEPAgent tokenTAM #i. ReceiveQueryMessage(TAM, TEEPAgent, tokenTAM) @i
+     ==> (Ex #j. ResponseQueryMessage(TEEPAgent, TAM, tokenTAM) @j & j < i)
+         | (Ex #r. LtkReveal(TEEPAgent) @r & HonestQueryMessage(TEEPAgent) @i & r < i)"
+
+lemma teep_message_authentication:
+    "All TAM TEEPAgent tokenTAM #i. ReceiveTeepMessage(TAM, TEEPAgent, tokenTAM) @i
+     ==> (Ex #j. ResponseTeepMessage(TEEPAgent, TAM, tokenTAM) @j & j < i)
+         | (Ex #r. LtkReveal(TEEPAgent) @r & HonestTeepMessage(TEEPAgent) @i & r < i)"
+
+
+end

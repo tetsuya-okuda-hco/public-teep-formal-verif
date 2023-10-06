@@ -1,0 +1,230 @@
+(* [Reference] *)
+(* Trusted Execution Environment Provisioning (TEEP) Protocol draft-ietf-teep-protocol-15 *)
+(* Encrypted Payloads in SUIT Manifests draft-ietf-suit-firmware-encryption-13 *)
+
+
+(* communication channel *)
+free c: channel.
+free ch_TAM_ctrl: channel [private].
+(* free ch_TEEPAgent_ctrl: channel [private]. *)
+(* control command is only for TAM *)
+
+
+(* teep-message-type list *)
+const query_request:bitstring.
+const query_response:bitstring.
+const teep_update:bitstring. (* update *)
+const teep_success:bitstring.
+const teep_error:bitstring.
+
+const query_OK:bitstring.
+const teep_OK:bitstring.
+
+(* teep-message-option list *)
+(* just now, only for token  *)
+(* const test_option:bitstring. *)
+
+
+(* key list *)
+(* just now, the same key for Key Exchange and Sign *)
+type pkey. (* public key *)
+type skey. (* private key *)
+fun pk(skey):pkey.
+type key. (* symmetric key *)
+
+(* COSE_Sign *)
+fun COSE_Sign(bitstring, skey):bitstring.
+reduc forall m:bitstring, sk:skey; COSE_Verif(COSE_Sign(m, sk), m, pk(sk)) = true.
+
+(* COSE_Encrypt *)
+fun COSE_Encrypt_KEM(key, pkey):bitstring.
+reduc forall m:key, sk:skey; COSE_Decrypt_KEM(COSE_Encrypt_KEM(m, pk(sk)), sk) = m.
+
+(* symmetric key encryption *)
+fun enc(bitstring, key): bitstring.
+reduc forall x:bitstring, y:key; dec(enc(x,y),y) = x.
+
+
+(* query whether iot_secret is secret *)
+(* secret includes firmware image, config info, personalization data *)
+free iot_secret: bitstring [private].
+query attacker(iot_secret).
+
+(* query: authentication TAM->TEEPAgent:OK, TAM->TAM:OK, TEEPAgent->TAM:OK(injective [TBD]), can be any TAM at each request without ACL and AR. [TBD] *)
+event TAM_query_process_start.
+event TAM_query_process_end.
+event TEEP_Agent_query_process_start.
+event TEEP_Agent_query_process_end.
+
+query event(TAM_query_process_start).
+query event(TAM_query_process_end).
+query event(TEEP_Agent_query_process_start).
+query event(TEEP_Agent_query_process_end).
+
+query event(TEEP_Agent_query_process_end) ==> event(TAM_query_process_start).
+query inj-event(TEEP_Agent_query_process_end) ==> inj-event(TAM_query_process_start).
+query event(TAM_query_process_end) ==> event(TEEP_Agent_query_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(TEEP_Agent_query_process_start).
+
+query event(TAM_query_process_end) ==> event(TAM_query_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(TAM_query_process_start).
+
+
+(* query: authentication TAM->TEEPAgent:OK, TAM->TAM:OK, TEEPAgent->TAM:OK(injective [TBD]), can be any TAM at each request without ACL and AR. [TBD] *)
+event TAM_teep_process_start.
+event TAM_teep_process_end.
+event TEEP_Agent_teep_process_start.
+event TEEP_Agent_teep_process_end.
+
+query event(TAM_teep_process_start).
+query event(TAM_teep_process_end).
+query event(TEEP_Agent_teep_process_start).
+query event(TEEP_Agent_teep_process_end).
+
+query event(TEEP_Agent_teep_process_end) ==> event(TAM_teep_process_start).
+query inj-event(TEEP_Agent_teep_process_end) ==> inj-event(TAM_teep_process_start).
+query event(TAM_teep_process_end) ==> event(TEEP_Agent_teep_process_start).
+query inj-event(TAM_teep_process_end) ==> inj-event(TEEP_Agent_teep_process_start).
+
+query event(TAM_teep_process_end) ==> event(TAM_teep_process_start).
+query inj-event(TAM_teep_process_end) ==> inj-event(TAM_teep_process_start).
+
+query attacker(iot_secret).
+
+
+(* The process *)
+
+let TAM_process(skTAM:skey, pkTAM:pkey, pkTEEPAgent:pkey) = 
+    (
+      (* query-request *)
+        in(ch_TAM_ctrl, =query_request);
+
+        event TAM_query_process_start;
+ 
+         let typeTAM = query_request in
+         (* let optionTAM = test_option in *)
+	 new tokenTAM:bitstring; (* token is optional *)
+         let optionTAM = tokenTAM in 
+         let teep_message_TAM = (typeTAM,optionTAM) in
+         let sign_teep_message_TAM = COSE_Sign(teep_message_TAM,skTAM) in
+
+         out(c,(teep_message_TAM,sign_teep_message_TAM)); (* if necessary, include sender and receiver in messsage *)
+
+         in(c,teep_sign_and_message_TEEPAgent:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let (teep_message_TEEPAgent:bitstring,sign_teep_message_TEEPAgent:bitstring) = teep_sign_and_message_TEEPAgent in
+         if COSE_Verif(sign_teep_message_TEEPAgent,teep_message_TEEPAgent,pkTEEPAgent) then
+         let (typeTEEPAgent:bitstring,optionTEEPAgent:bitstring) = teep_message_TEEPAgent in
+         if typeTEEPAgent = query_response then 
+         if optionTEEPAgent = tokenTAM then 
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         out(c, query_OK);
+
+        event TAM_query_process_end
+    )
+    |
+    (
+      (* update *)
+        in(ch_TAM_ctrl, =teep_update);
+
+        event TAM_teep_process_start;
+
+         let typeTAM = teep_update in
+         (* let optionTAM = test_option in *)
+	 new tokenTAM:bitstring; (* token is optional *)
+         let optionTAM = tokenTAM in 
+         let teep_message_TAM = (typeTAM,optionTAM) in
+         let sign_teep_message_TAM = COSE_Sign(teep_message_TAM,skTAM) in
+
+         new cek:key; (* content encryption key, symmetric key *)
+         let suit_message_TAM = (COSE_Encrypt_KEM(cek,pkTEEPAgent),enc(iot_secret,cek)) in
+         let sign_suit_message_TAM = COSE_Sign(suit_message_TAM,skTAM) in
+
+         out(c,((teep_message_TAM,sign_teep_message_TAM),(suit_message_TAM,sign_suit_message_TAM))); (* if necessary, include sender and receiver in messsage *)
+
+         in(c,teep_sign_and_message_TEEPAgent:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let (teep_message_TEEPAgent:bitstring,sign_teep_message_TEEPAgent:bitstring) = teep_sign_and_message_TEEPAgent in
+         if COSE_Verif(sign_teep_message_TEEPAgent,teep_message_TEEPAgent,pkTEEPAgent) then
+         let (typeTEEPAgent:bitstring,optionTEEPAgent:bitstring) = teep_message_TEEPAgent in
+         if typeTEEPAgent = teep_success then 
+         if optionTEEPAgent = tokenTAM then 
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         out(c, teep_OK);
+
+         (* if typeTEEPAgent = teep_error then 0 *)
+
+        event TAM_teep_process_end
+    ).
+
+let TEEP_Agent_process(skTEEPAgent:skey, pkTEEPAgent:pkey, pkTAM:pkey) = 
+    (
+      (* query-response *)
+        event TEEP_Agent_query_process_start;
+
+         in(c,teep_sign_and_message_TAM:bitstring); (* if necessary, include sender and receiver in messsage *)
+
+         let (teep_message_TAM:bitstring,sign_teep_message_TAM:bitstring) = teep_sign_and_message_TAM in
+         if COSE_Verif(sign_teep_message_TAM,teep_message_TAM,pkTAM) then
+         let (typeTAM:bitstring,optionTAM:bitstring) = teep_message_TAM in
+         if typeTAM = query_request then
+
+         let typeTEEPAgent = query_response in
+         (* let optionTEEPAgent = test_option in *)
+         let tokenTAM = optionTAM in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         let optionTEEPAgent = tokenTAM in
+         let teep_message_TEEPAgent = (typeTEEPAgent,optionTEEPAgent) in
+         let sign_teep_message_TEEPAgent = COSE_Sign(teep_message_TEEPAgent,skTEEPAgent) in
+         out(c,(teep_message_TEEPAgent,sign_teep_message_TEEPAgent)); (* if necessary, include sender and receiver in messsage *)
+
+        event TEEP_Agent_query_process_end
+    )
+    |
+    (    
+      (* teep-success/error *)
+        event TEEP_Agent_teep_process_start;
+
+         in(c,teep_and_suit_sign_and_message_TAM:bitstring); 
+         let (teep_sign_and_message_TAM:bitstring,suit_sign_and_message_TAM:bitstring) = teep_and_suit_sign_and_message_TAM in
+
+         let (teep_message_TAM:bitstring,sign_teep_message_TAM:bitstring) = teep_sign_and_message_TAM in
+         if COSE_Verif(sign_teep_message_TAM,teep_message_TAM,pkTAM) then
+         let (typeTAM:bitstring,optionTAM:bitstring) = teep_message_TAM in
+         if typeTAM = teep_update then
+
+         let (suit_message_TAM:bitstring,sign_suit_message_TAM:bitstring) = suit_sign_and_message_TAM in
+         if COSE_Verif(sign_suit_message_TAM,suit_message_TAM,pkTAM) then
+         let (encrypted_cek_TEEPAgent:bitstring,encrypted_iot_secret_TEEPAgent:bitstring) = suit_message_TAM in
+         let plain_cek_TEEPAgent:key = COSE_Decrypt_KEM(encrypted_cek_TEEPAgent,skTEEPAgent) in
+         let plain_iot_secret_TEEPAgent:bitstring = dec(encrypted_iot_secret_TEEPAgent,plain_cek_TEEPAgent) in
+         (* this branch means that the processing of iot_secret is complete *)
+
+         let typeTEEPAgent = teep_success in
+         (* let typeTEEPAgent = teep_error in *)
+         (* let optionTEEPAgent = test_option in *)
+         let tokenTAM = optionTAM in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         let optionTEEPAgent = tokenTAM in
+         let teep_message_TEEPAgent = (typeTEEPAgent,optionTEEPAgent) in
+         let sign_teep_message_TEEPAgent = COSE_Sign(teep_message_TEEPAgent,skTEEPAgent) in
+         out(c,(teep_message_TEEPAgent,sign_teep_message_TEEPAgent)); (* if necessary, include sender and receiver in messsage *)
+
+        event TEEP_Agent_teep_process_end
+    ).
+
+process 
+	new skTAM: skey;
+	let pkTAM = pk(skTAM) in
+	out(c, pkTAM);
+	new skTEEPAgent: skey;
+	let pkTEEPAgent = pk(skTEEPAgent) in
+	out(c, pkTEEPAgent);
+
+        out(ch_TAM_ctrl, query_request);
+        out(ch_TAM_ctrl, teep_update); (* update *)
+        (* in principle, the trigger for this control sequence is TAM *)
+        (* out(ch_TEEPAgent_ctrl, query_response); *)
+        (* out(ch_TEEPAgent_ctrl, teep_success); *)
+        (* out(ch_TEEPAgent_ctrl, teep_error); *)
+
+	((!TAM_process(skTAM, pkTAM, pkTEEPAgent)) | (!TEEP_Agent_process(skTEEPAgent, pkTEEPAgent, pkTAM)))
+
