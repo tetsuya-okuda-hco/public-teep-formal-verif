@@ -1,2 +1,2 @@
 Proverif : 2.04
-Tamarin Prover : 1.8.0
+Tamarin Prover : 1.6.1
