@@ -10,9 +10,11 @@ ProVerif & Tamarin Prover is the formal verification tools to analyze the securi
 
 ## Usage
 - See [proverif](https://bblanche.gitlabpages.inria.fr/proverif/)
-- See [tamarin_prover](https://tamarin-prover.github.io/)
 ```
 $ proverif TEEP_20231003_13_1.pv
+```
+- See [tamarin_prover](https://tamarin-prover.github.io/)
+```
 $ tamarin-prover --prove TEEP_20231003_16_1.spthy
 ```
 ## LICENSE
