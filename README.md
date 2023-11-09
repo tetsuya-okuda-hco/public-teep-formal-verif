@@ -1,11 +1,9 @@
-# Formal Verification of TEEP Protocol with SUIT Encrypted Payload using ProVerif & Tamarin Prover
-The purpose of this project is the formal verification of TEEP protocol with SUIT encrypted payload using ProVerif & Tamarin Prover.
+# Training for Formal Verification of TEEP Protocol with SUIT Encrypted Payload using ProVerif & Tamarin Prover
+The purpose of this project is the training for the formal verification of TEEP protocol with SUIT encrypted payload using ProVerif & Tamarin Prover.
 ProVerif & Tamarin Prover is the formal verification tools to analyze the security properties of security protocols.
-## What is verified here?
-- (DONE)
-  - The authentication of TEEPAgent is verified.
-  - The secrecy of encrypted payload is verified.
 - (TODO)
+  - The authentication of TEEPAgent is in progress.
+  - The secrecy of encrypted payload is in progress.
   - The authentication of TAM is in progress, because our present verification code doesn't deal with TAM Attestation Result and Access Control List [TBD].
 
 ## Usage
