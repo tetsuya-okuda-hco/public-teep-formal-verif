@@ -1,0 +1,600 @@
+(* [Reference] *)
+(* A Usable Formal Methods Sample Problem from TEEP draft-mt-ufmrg-teep-sample-00 *)
+(* Trusted Execution Environment Provisioning (TEEP) Protocol draft-ietf-teep-protocol-15 *)
+(* Encrypted Payloads in SUIT Manifests draft-ietf-suit-firmware-encryption-13 *)
+
+
+(* communication channel *)
+free c: channel.
+free c_Attester: channel.
+(* free c_Attester: channel [private]. *) (* secure channel is established by psk *)
+free ch_Author: channel.
+free ch_TAM_Author: channel.
+(* free ch_TAM_Author: channel [private]. *)
+(* free ch_TEEPAgent_ctrl: channel [private]. *) (* control command is only for TAM *)
+
+
+(* teep-message-type list *)
+const Author_query_start:bitstring.
+const Author_update_start:bitstring.
+const nonce_request:bitstring.
+const query_request:bitstring.
+const query_response:bitstring.
+const teep_update:bitstring. 
+const teep_success:bitstring.
+const teep_error:bitstring.
+const query_OK:bitstring.
+const teep_update_OK:bitstring.
+
+
+(* key list *)
+(* just now, the same key for Key Exchange and Sign *)
+type pkey. (* public key *)
+type skey. (* private key *)
+fun pk(skey):pkey.
+type key. (* symmetric key *)
+
+(* COSE_Sign *)
+fun COSE_Sign(bitstring, skey):bitstring.
+reduc forall m:bitstring, sk:skey; COSE_Verif(COSE_Sign(m, sk), m, pk(sk)) = true.
+
+(* COSE_Encrypt *)
+fun COSE_Encrypt_KEM(key, pkey):bitstring.
+reduc forall m:key, sk:skey; COSE_Decrypt_KEM(COSE_Encrypt_KEM(m, pk(sk)), sk) = m.
+
+(* symmetric key encryption *)
+fun enc(bitstring, key): bitstring.
+reduc forall x:bitstring, y:key; dec(enc(x,y),y) = x.
+
+(* message authentication code *)
+fun mac(bitstring, key): bitstring.
+reduc forall m:bitstring, k:key; checkmac(mac(m,k),m,k) = true.
+
+
+(* query whether iot_secret is secret *) (* not in scope of Cory's draft *)
+(* secret includes firmware image, config info, personalization data *)
+free iot_secret: bitstring [private].
+query attacker(iot_secret).
+
+(* query / integrity of Trusted Component *)
+event TCSigner_install_start(bitstring).
+event TAM_install_process(bitstring).
+event TC_successfully_installed(bitstring).
+query TCSigner_message:bitstring; event(TCSigner_install_start(TCSigner_message)).
+query TCSigner_message:bitstring; event(TAM_install_process(TCSigner_message)).
+query TCSigner_message:bitstring; event(TC_successfully_installed(TCSigner_message)).
+query TCSigner_message:bitstring; event(TC_successfully_installed(TCSigner_message)) ==> event(TCSigner_install_start(TCSigner_message)).
+query TCSigner_message:bitstring; inj-event(TC_successfully_installed(TCSigner_message)) ==> inj-event(TCSigner_install_start(TCSigner_message)).
+query TCSigner_message:bitstring; event(TC_successfully_installed(TCSigner_message)) ==> ( event(TAM_install_process(TCSigner_message)) ==> event(TCSigner_install_start(TCSigner_message)) ).
+query TCSigner_message:bitstring; inj-event(TC_successfully_installed(TCSigner_message)) ==> ( inj-event(TAM_install_process(TCSigner_message)) ==> inj-event(TCSigner_install_start(TCSigner_message)) ).
+query TCSigner_message:bitstring; event(TC_successfully_installed(TCSigner_message)) ==> event(TAM_install_process(TCSigner_message)).
+query TCSigner_message:bitstring; inj-event(TC_successfully_installed(TCSigner_message)) ==> inj-event(TAM_install_process(TCSigner_message)).
+query TCSigner_message:bitstring; event(TAM_install_process(TCSigner_message)) ==> event(TCSigner_install_start(TCSigner_message)).
+query TCSigner_message:bitstring; inj-event(TAM_install_process(TCSigner_message)) ==> inj-event(TCSigner_install_start(TCSigner_message)).
+
+(* query / authentication without session identifier *)
+event TCSigner_query_process_start.
+event TCSigner_query_process_end.
+event TCSigner_update_process_start.
+event TCSigner_update_process_end.
+event Verifier_process_start.
+event Verifier_process_end.
+event Attester_process_start.
+event Attester_process_end.
+
+query event(TCSigner_query_process_start).
+query event(TCSigner_query_process_end).
+query event(TCSigner_update_process_start).
+query event(TCSigner_update_process_end).
+query event(Verifier_process_start).
+query event(Verifier_process_end).
+query event(Attester_process_start).
+query event(Attester_process_end).
+
+query event(TCSigner_query_process_end) ==> event(TAM_query_process_start).
+query inj-event(TCSigner_query_process_end) ==> inj-event(TAM_query_process_start).
+query event(TAM_query_process_end) ==> event(TCSigner_query_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(TCSigner_query_process_start).
+
+query event(TCSigner_update_process_end) ==> event(TAM_update_process_start).
+query inj-event(TCSigner_update_process_end) ==> inj-event(TAM_update_process_start).
+query event(TAM_update_process_end) ==> event(TCSigner_update_process_start).
+query inj-event(TAM_update_process_end) ==> inj-event(TCSigner_update_process_start).
+
+query event(Verifier_process_end) ==> ( event(TAM_query_process_start) || event(TAM_update_process_start) ).
+query inj-event(Verifier_process_end) ==> ( inj-event(TAM_query_process_start) || inj-event(TAM_update_process_start) ).
+query event(TAM_query_process_end) ==> event(Verifier_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(Verifier_process_start).
+query event(TAM_update_process_end) ==> event(Verifier_process_start).
+query inj-event(TAM_update_process_end) ==> inj-event(Verifier_process_start).
+
+query event(Attester_process_end) ==> ( event(TEEP_Agent_query_process_start) || event(TEEP_Agent_update_process_start) ).
+query inj-event(Attester_process_end) ==> ( inj-event(TEEP_Agent_query_process_start) || inj-event(TEEP_Agent_update_process_start) ).
+query event(TEEP_Agent_query_process_end) ==> event(Attester_process_start).
+query inj-event(TEEP_Agent_query_process_end) ==> inj-event(Attester_process_start).
+query event(TEEP_Agent_update_process_end) ==> event(Attester_process_start).
+query inj-event(TEEP_Agent_update_process_end) ==> inj-event(Attester_process_start).
+
+
+(* authentication / with session identifier *)
+
+event Verifier_process_start_arity1(bitstring).
+event Verifier_process_end_arity1(bitstring).
+event TAM_query_process_start_arity1(bitstring).
+event TAM_query_process_end_arity1(bitstring).
+event TAM_update_process_start_arity1(bitstring).
+event TAM_update_process_end_arity1(bitstring).
+query nonce:bitstring; event(Verifier_process_start_arity1(nonce)).
+query nonce:bitstring; event(Verifier_process_end_arity1(nonce)).
+query nonce:bitstring; event(TAM_query_process_start_arity1(nonce)).
+query nonce:bitstring; event(TAM_query_process_end_arity1(nonce)).
+query nonce:bitstring; event(TAM_update_process_start_arity1(nonce)).
+query nonce:bitstring; event(TAM_update_process_end_arity1(nonce)).
+query nonce:bitstring; event(Verifier_process_end_arity1(nonce)) ==> ( event(TAM_query_process_start_arity1(nonce)) || event(TAM_update_process_start_arity1(nonce)) ).
+query nonce:bitstring; inj-event(Verifier_process_end_arity1(nonce)) ==> ( inj-event(TAM_query_process_start_arity1(nonce)) || inj-event(TAM_update_process_start_arity1(nonce)) ).
+query nonce:bitstring; event(TAM_query_process_end_arity1(nonce)) ==> event(Verifier_process_start_arity1(nonce)).
+query nonce:bitstring; inj-event(TAM_query_process_end_arity1(nonce)) ==> inj-event(Verifier_process_start_arity1(nonce)).
+query nonce:bitstring; event(TAM_update_process_end_arity1(nonce)) ==> event(Verifier_process_start_arity1(nonce)).
+query nonce:bitstring; inj-event(TAM_update_process_end_arity1(nonce)) ==> inj-event(Verifier_process_start_arity1(nonce)).
+
+event TAM_query_process_start_arity2(bitstring,bitstring).
+event TAM_query_process_end_arity2(bitstring,bitstring).
+event TAM_update_process_start_arity2(bitstring,bitstring).
+event TAM_update_process_end_arity2(bitstring,bitstring).
+event TEEPAgent_query_process_start_arity2(bitstring,bitstring).
+event TEEPAgent_query_process_end_arity2(bitstring,bitstring).
+event TEEPAgent_update_process_start_arity2(bitstring,bitstring).
+event TEEPAgent_update_process_end_arity2(bitstring,bitstring).
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_query_process_end_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_update_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_update_process_end_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_query_process_end_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_update_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_update_process_end_arity2(tokenTAM,challenge)).
+
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_query_process_end_arity2(tokenTAM,challenge)) ==> event(TEEPAgent_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; inj-event(TAM_query_process_end_arity2(tokenTAM,challenge)) ==> inj-event(TEEPAgent_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_query_process_end_arity2(tokenTAM,challenge)) ==> event(TAM_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; inj-event(TEEPAgent_query_process_end_arity2(tokenTAM,challenge)) ==> inj-event(TAM_query_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TAM_update_process_end_arity2(tokenTAM,challenge)) ==> event(TEEPAgent_update_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; inj-event(TAM_update_process_end_arity2(tokenTAM,challenge)) ==> inj-event(TEEPAgent_update_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; event(TEEPAgent_update_process_end_arity2(tokenTAM,challenge)) ==> event(TAM_update_process_start_arity2(tokenTAM,challenge)).
+query tokenTAM:bitstring, challenge:bitstring; inj-event(TEEPAgent_update_process_end_arity2(tokenTAM,challenge)) ==> inj-event(TAM_update_process_start_arity2(tokenTAM,challenge)).
+
+event Attester_process_start_arity1(bitstring).
+event Attester_process_end_arity1(bitstring).
+event TEEPAgent_query_process_start_arity1(bitstring).
+event TEEPAgent_query_process_end_arity1(bitstring).
+event TEEPAgent_update_process_start_arity1(bitstring).
+event TEEPAgent_update_process_end_arity1(bitstring).
+query challenge:bitstring; event(Attester_process_start_arity1(challenge)).
+query challenge:bitstring; event(Attester_process_end_arity1(challenge)).
+query challenge:bitstring; event(TEEPAgent_query_process_start_arity1(challenge)).
+query challenge:bitstring; event(TEEPAgent_query_process_end_arity1(challenge)).
+query challenge:bitstring; event(TEEPAgent_update_process_start_arity1(challenge)).
+query challenge:bitstring; event(TEEPAgent_update_process_end_arity1(challenge)).
+query challenge:bitstring; event(Attester_process_end_arity1(challenge)) ==> ( event(TEEPAgent_query_process_start_arity1(challenge)) || event(TEEPAgent_update_process_start_arity1(challenge)) ).
+query challenge:bitstring; inj-event(Attester_process_end_arity1(challenge)) ==> ( inj-event(TEEPAgent_query_process_start_arity1(challenge)) || inj-event(TEEPAgent_update_process_start_arity1(challenge)) ).
+query challenge:bitstring; event(TEEPAgent_query_process_end_arity1(challenge)) ==> event(Attester_process_start_arity1(challenge)).
+query challenge:bitstring; inj-event(TEEPAgent_query_process_end_arity1(challenge)) ==> inj-event(Attester_process_start_arity1(challenge)).
+query challenge:bitstring; event(TEEPAgent_update_process_end_arity1(challenge)) ==> event(Attester_process_start_arity1(challenge)).
+query challenge:bitstring; inj-event(TEEPAgent_update_process_end_arity1(challenge)) ==> inj-event(Attester_process_start_arity1(challenge)).
+
+
+(* query / integrity of evidence *)
+event Verifier_process_message(bitstring).
+event Attester_process_message(bitstring).
+event TAM_query_process_evidence(bitstring).
+event TEEPAgent_query_process_evidence(bitstring).
+event TAM_update_process_evidence(bitstring).
+event TEEPAgent_update_process_evidence(bitstring).
+query evidence_message:bitstring; event(Verifier_process_message(evidence_message)).
+query evidence_message:bitstring; event(Attester_process_message(evidence_message)).
+query evidence_message:bitstring; event(TAM_query_process_evidence(evidence_message)).
+query evidence_message:bitstring; event(TEEPAgent_query_process_evidence(evidence_message)).
+query evidence_message:bitstring; event(TAM_update_process_evidence(evidence_message)).
+query evidence_message:bitstring; event(TEEPAgent_update_process_evidence(evidence_message)).
+
+query event(Verifier_process_end) ==> event(Attester_process_start).
+query inj-event(Verifier_process_end) ==> inj-event(Attester_process_start).
+query evidence_message:bitstring; event(Verifier_process_message(evidence_message)) ==> event(Attester_process_message(evidence_message)).
+query evidence_message:bitstring; inj-event(Verifier_process_message(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)).
+
+
+(* can be any TAM who provides the valid evidence *)
+query evidence_message:bitstring; event(Verifier_process_message(evidence_message)) ==> ( event(TAM_query_process_evidence(evidence_message)) || event(TAM_update_process_evidence(evidence_message)) ).
+query evidence_message:bitstring; inj-event(Verifier_process_message(evidence_message)) ==> ( inj-event(TAM_query_process_evidence(evidence_message)) || inj-event(TAM_update_process_evidence(evidence_message)) ).
+
+query evidence_message:bitstring; event(TAM_query_process_evidence(evidence_message)) ==> event(TEEPAgent_query_process_evidence(evidence_message)).
+query evidence_message:bitstring; event(TEEPAgent_query_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)).
+query evidence_message:bitstring; inj-event(TAM_query_process_evidence(evidence_message)) ==> inj-event(TEEPAgent_query_process_evidence(evidence_message)).
+query evidence_message:bitstring; inj-event(TEEPAgent_query_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)).
+
+query evidence_message:bitstring; event(TAM_update_process_evidence(evidence_message)) ==> event(TEEPAgent_update_process_evidence(evidence_message)).
+query evidence_message:bitstring; event(TEEPAgent_update_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)).
+query evidence_message:bitstring; inj-event(TAM_update_process_evidence(evidence_message)) ==> inj-event(TEEPAgent_update_process_evidence(evidence_message)).
+query evidence_message:bitstring; inj-event(TEEPAgent_update_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)).
+
+query evidence_message:bitstring; event(Verifier_process_message(evidence_message)) ==> ( event(TAM_query_process_evidence(evidence_message)) ==> ( event(TEEPAgent_query_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)) ) ) || ( event(TAM_query_process_evidence(evidence_message)) ==> ( event(TEEPAgent_update_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)) ) ) || ( event(TAM_update_process_evidence(evidence_message)) ==> ( event(TEEPAgent_query_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)) ) ) || ( event(TAM_update_process_evidence(evidence_message)) ==> ( event(TEEPAgent_update_process_evidence(evidence_message)) ==> event(Attester_process_message(evidence_message)) ) ).
+query evidence_message:bitstring; inj-event(Verifier_process_message(evidence_message)) ==> ( inj-event(TAM_query_process_evidence(evidence_message)) ==> ( inj-event(TEEPAgent_query_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)) ) ) || ( inj-event(TAM_query_process_evidence(evidence_message)) ==> ( inj-event(TEEPAgent_update_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)) ) ) || ( inj-event(TAM_update_process_evidence(evidence_message)) ==> ( inj-event(TEEPAgent_query_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)) ) ) || ( inj-event(TAM_update_process_evidence(evidence_message)) ==> ( inj-event(TEEPAgent_update_process_evidence(evidence_message)) ==> inj-event(Attester_process_message(evidence_message)) ) ).
+
+
+(* query: authentication TAM->TEEPAgent:OK, TAM->TAM:OK, TEEPAgent->TAM:OK(injective [TBD]), can be any TAM at each request without ACL and AR. [TBD] *)
+event TAM_query_process_start.
+event TAM_query_process_end.
+event TEEP_Agent_query_process_start.
+event TEEP_Agent_query_process_end.
+
+query event(TAM_query_process_start).
+query event(TAM_query_process_end).
+query event(TEEP_Agent_query_process_start).
+query event(TEEP_Agent_query_process_end).
+
+query event(TEEP_Agent_query_process_end) ==> event(TAM_query_process_start).
+query inj-event(TEEP_Agent_query_process_end) ==> inj-event(TAM_query_process_start).
+query event(TAM_query_process_end) ==> event(TEEP_Agent_query_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(TEEP_Agent_query_process_start).
+
+query event(TAM_query_process_end) ==> event(TAM_query_process_start).
+query inj-event(TAM_query_process_end) ==> inj-event(TAM_query_process_start).
+
+
+(* query: authentication TAM->TEEPAgent:OK, TAM->TAM:OK, TEEPAgent->TAM:OK(injective [TBD]), can be any TAM at each request without ACL and AR. [TBD] *)
+event TAM_update_process_start.
+event TAM_update_process_end.
+event TEEP_Agent_update_process_start.
+event TEEP_Agent_update_process_end.
+
+query event(TAM_update_process_start).
+query event(TAM_update_process_end).
+query event(TEEP_Agent_update_process_start).
+query event(TEEP_Agent_update_process_end).
+
+query event(TEEP_Agent_update_process_end) ==> event(TAM_update_process_start).
+query inj-event(TEEP_Agent_update_process_end) ==> inj-event(TAM_update_process_start).
+query event(TAM_update_process_end) ==> event(TEEP_Agent_update_process_start).
+query inj-event(TAM_update_process_end) ==> inj-event(TEEP_Agent_update_process_start).
+
+query event(TAM_update_process_end) ==> event(TAM_update_process_start).
+query inj-event(TAM_update_process_end) ==> inj-event(TAM_update_process_start).
+
+
+free plain_iot_secret_TEEPAgent: bitstring [private].
+query attacker(plain_iot_secret_TEEPAgent).
+
+
+
+(* The process *)
+let Verifier_process(skVerifier:skey, pkTAM:pkey, pkAttester:pkey, pkVerifier:pkey) =
+    (
+      (* nonce-response *)
+        in(c, =nonce_request);
+
+         new nonce:bitstring; 
+
+        event Verifier_process_start;
+        event Verifier_process_start_arity1(nonce);
+
+         out(c,nonce); (* if necessary, include sender and receiver in messsage *)
+
+         in(c,(evidence_message:bitstring,sign_evidence_message_Attester:bitstring));
+         if COSE_Verif(sign_evidence_message_Attester,evidence_message,pkAttester) then
+         let (=nonce,claims:bitstring) = evidence_message in (* claim is to be also verified *)
+         (* let (nonce:bitstring,claims:bitstring) = evidence_message in *) (* claim is to be also verified *)
+
+        event Verifier_process_message(evidence_message);
+
+         let sign_evidence_message_Verifier = COSE_Sign(evidence_message,skVerifier) in
+         out(c,(evidence_message,sign_evidence_message_Verifier));
+
+        event Verifier_process_end;
+        event Verifier_process_end_arity1(nonce)
+    ).
+
+let Attester_process(psk:key, skAttester:skey, pkAttester:pkey) = 
+(* let Attester_process(psk:key, skAttester:skey, pkTEEPAgent:pkey, pkTAM:pkey, pkAttester:pkey, pkAuthor:pkey) = *)
+(* pkTEEPAgent:pkey, pkTAM:pkey, pkAuthor:pkey, the public key should be added in case for access control *)
+(* this psk is used for establishing the secure channel between the TEEP Agent and the Attester *)
+    (
+      (* evidence-response *)
+        in(c_Attester, enc_mac_challenge:bitstring);
+        let (enc_challenge:bitstring,mac_challenge:bitstring) = enc_mac_challenge in
+        let challenge:bitstring = dec(enc_challenge,psk) in
+        if checkmac(mac_challenge,challenge,psk) then
+
+        event Attester_process_start;
+        event Attester_process_start_arity1(challenge);
+
+         new claims:bitstring;
+         let evidence_message = (challenge,claims) in 
+
+        event Attester_process_message(evidence_message);
+
+         let sign_evidence_message_Attester = COSE_Sign(evidence_message,skAttester) in
+         let enc_evidence_message = enc(evidence_message,psk) in
+         out(c_Attester,(enc_evidence_message,sign_evidence_message_Attester));
+         (* if necessary, include sender and receiver in messsage *)
+
+        event Attester_process_end_arity1(challenge);
+        event Attester_process_end
+    ).
+
+let TCSigner_process(skAuthor:skey, pkTAM:pkey, pkAuthor:pkey) = 
+    (* TCSigner = Author *) (* pkTAM should be authenticated *)
+    (* pkTEEPAgent:pkey, pkAttester:pkey, the public key should be added in case for access control *)
+    (
+      (* Author query *)
+        in(ch_Author, =Author_query_start);(* Author query *)
+
+        event TCSigner_query_process_start;
+
+         out(ch_TAM_Author,query_request); (* if necessary, include sender and receiver in messsage *)
+
+        event TCSigner_query_process_end
+    )
+    |
+    ( 
+      (* Author update *)
+        in(ch_Author, =Author_update_start);(* Author update *)
+
+        event TCSigner_update_process_start;
+
+         new TC:bitstring; (* TC includes TA and Personalization Data *)
+         new TC_seq_nr:bitstring;
+         new TC_manifest:bitstring;
+         let TCSigner_message = (TC,TC_seq_nr,TC_manifest) in
+         let sign_TCSigner_message = COSE_Sign(TCSigner_message,skAuthor) in
+
+         event TCSigner_install_start(TCSigner_message);
+
+         (* out(ch_TAM_Author,(TCSigner_message,sign_TCSigner_message)); *) (* if necessary, include sender and receiver in messsage *)
+         out(ch_TAM_Author,(teep_update,TCSigner_message,sign_TCSigner_message)); (* if necessary, include sender and receiver in messsage *)
+
+        event TCSigner_update_process_end
+    ).
+
+
+let TAM_process(skTAM:skey, pkTAM:pkey, pkTEEPAgent:pkey, pkAuthor:pkey, pkAttester:pkey, pkVerifier:pkey) = 
+    (
+      (* query-request *)
+        in(ch_TAM_Author, =query_request);
+ 
+        event TAM_query_process_start;
+
+         (* nonce-request *)
+         out(c,nonce_request); (* if necessary, include sender and receiver in messsage *)
+         in(c,nonce:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let challenge:bitstring = nonce in
+         (* let challenge = nonce in *)
+
+        event TAM_query_process_start_arity1(challenge); (* true *)
+
+         let typeTAM = query_request in
+	 new tokenTAM:bitstring; (* token is optional *)
+         let optionTAM = (tokenTAM,challenge) in 
+         let teep_message_TAM = (typeTAM,optionTAM) in
+         let sign_teep_message_TAM = COSE_Sign(teep_message_TAM,skTAM) in
+
+        event TAM_query_process_start_arity2(tokenTAM,challenge);
+
+         out(c,(teep_message_TAM,sign_teep_message_TAM)); (* if necessary, include sender and receiver in messsage *)
+
+         in(c,teep_sign_and_message_TEEPAgent:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let (teep_message_TEEPAgent:bitstring,sign_teep_message_TEEPAgent:bitstring) = teep_sign_and_message_TEEPAgent in
+         if COSE_Verif(sign_teep_message_TEEPAgent,teep_message_TEEPAgent,pkTEEPAgent) then
+         let (typeTEEPAgent:bitstring,optionTEEPAgent:bitstring,evidence_message:bitstring,sign_evidence_message_Attester:bitstring,tc_list:bitstring) = teep_message_TEEPAgent in
+         if typeTEEPAgent = query_response then 
+         let (=tokenTAM,=challenge,claims:bitstring) = optionTEEPAgent in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         (* if COSE_Verif(sign_evidence_message_Attester,evidence_message,pkAttester) then *) (* not in scope *)
+         let (=challenge,claims:bitstring) = evidence_message in
+         let (=nonce,claims:bitstring) = evidence_message in
+
+        (* event TAM_query_process_start_arity1(challenge); *) (* false *)
+         event TAM_query_process_evidence(evidence_message);
+
+         out(c,(evidence_message,sign_evidence_message_Attester));
+         in(c,attestation_result:bitstring);
+         let (evidence_message:bitstring,sign_evidence_message_Verifier:bitstring) = attestation_result in
+         if COSE_Verif(sign_evidence_message_Verifier,evidence_message,pkVerifier) then
+         let (=challenge,claims:bitstring) = evidence_message in
+
+         out(c, query_OK); (* tc_list is checked *)
+
+        event TAM_query_process_end_arity2(tokenTAM,challenge);
+        event TAM_query_process_end_arity1(challenge);
+        event TAM_query_process_end
+    )
+    |
+    (
+      (* update *)
+        (* in(ch_TAM_Author, =teep_update); *)
+        in(ch_TAM_Author, message_and_sign_Author:bitstring);
+        let (=teep_update,TCSigner_message:bitstring,sign_TCSigner_message:bitstring) = message_and_sign_Author in 
+
+        if COSE_Verif(sign_TCSigner_message,TCSigner_message,pkAuthor) then
+
+        event TAM_install_process(TCSigner_message);
+
+        let (TC:bitstring,TC_seq_nr:bitstring,TC_manifest:bitstring) = TCSigner_message in
+
+        event TAM_update_process_start;
+
+         (* nonce-request *)
+         out(c,nonce_request); (* if necessary, include sender and receiver in messsage *)
+         in(c,nonce:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let challenge:bitstring = nonce in
+
+        event TAM_update_process_start_arity1(challenge); (* true *)
+
+         let typeTAM = teep_update in
+	 new tokenTAM:bitstring; (* token is optional *)
+         let optionTAM = (tokenTAM,challenge) in
+         let teep_message_TAM = (typeTAM,optionTAM,TCSigner_message,sign_TCSigner_message) in
+         let sign_teep_message_TAM = COSE_Sign(teep_message_TAM,skTAM) in
+
+        event TAM_update_process_start_arity2(tokenTAM,challenge);
+
+         new cek:key; (* content encryption key, symmetric key *)
+         let suit_message_TAM = (COSE_Encrypt_KEM(cek,pkTEEPAgent),enc(iot_secret,cek)) in
+         let sign_suit_message_TAM = COSE_Sign(suit_message_TAM,skTAM) in
+
+         out(c,((teep_message_TAM,sign_teep_message_TAM),(suit_message_TAM,sign_suit_message_TAM))); (* if necessary, include sender and receiver in messsage *)
+
+         in(c,teep_sign_and_message_TEEPAgent:bitstring); (* if necessary, include sender and receiver in messsage *)
+         let (teep_message_TEEPAgent:bitstring,sign_teep_message_TEEPAgent:bitstring) = teep_sign_and_message_TEEPAgent in
+         if COSE_Verif(sign_teep_message_TEEPAgent,teep_message_TEEPAgent,pkTEEPAgent) then
+         let (typeTEEPAgent:bitstring,optionTEEPAgent:bitstring,evidence_message:bitstring,sign_evidence_message_Attester:bitstring) = teep_message_TEEPAgent in
+         if typeTEEPAgent = teep_success then 
+         let (=tokenTAM,=challenge,claims:bitstring) = optionTEEPAgent in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+         (* if COSE_Verif(sign_evidence_message_Attester,evidence_message,pkAttester) then *) (* not in scope *)
+         let (=challenge,claims:bitstring) = evidence_message in
+         let (=nonce,claims:bitstring) = evidence_message in
+
+         event TAM_update_process_evidence(evidence_message);
+        (* event TAM_update_process_start_arity1(challenge); *) (* false *)
+
+         out(c,(evidence_message,sign_evidence_message_Attester));
+         in(c,attestation_result:bitstring);
+         let (evidence_message:bitstring,sign_evidence_message_Verifier:bitstring) = attestation_result in
+         if COSE_Verif(sign_evidence_message_Verifier,evidence_message,pkVerifier) then
+         let (=challenge,claims:bitstring) = evidence_message in
+
+         out(c, teep_update_OK);
+
+         (* if typeTEEPAgent = teep_error then 0 *)
+
+        event TAM_update_process_end_arity2(tokenTAM,challenge);
+        event TAM_update_process_end_arity1(challenge);
+        event TAM_update_process_end
+    ).
+
+let TEEP_Agent_process(psk:key, skTEEPAgent:skey, pkTEEPAgent:pkey, pkTAM:pkey, pkAttester:pkey, pkAuthor:pkey) = 
+    (
+      (* query-response *)
+        event TEEP_Agent_query_process_start;
+
+         new tc_list:bitstring; (* in implementation, this should be extracted from local storage *)
+
+         in(c,teep_sign_and_message_TAM:bitstring); (* if necessary, include sender and receiver in messsage *)
+
+         let (teep_message_TAM:bitstring,sign_teep_message_TAM:bitstring) = teep_sign_and_message_TAM in
+         if COSE_Verif(sign_teep_message_TAM,teep_message_TAM,pkTAM) then
+         let (typeTAM:bitstring,optionTAM:bitstring) = teep_message_TAM in
+         if typeTAM = query_request then
+
+         let (tokenTAM:bitstring,challenge:bitstring) = optionTAM in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+
+        event TEEPAgent_query_process_start_arity2(tokenTAM,challenge);
+        event TEEPAgent_query_process_start_arity1(challenge);
+
+         let mac_challenge = mac(challenge,psk) in
+         let enc_challenge = enc(challenge,psk) in
+         out(c_Attester,(enc_challenge,mac_challenge)); (* or private channel *)       
+
+         in(c_Attester,sign_and_message_Attester:bitstring);
+         let (enc_evidence_message:bitstring,sign_evidence_message:bitstring) = sign_and_message_Attester in 
+         let evidence_message:bitstring = dec(enc_evidence_message,psk) in 
+         if COSE_Verif(sign_evidence_message,evidence_message,pkAttester) then (* not in scope *)
+         let (=challenge,claims:bitstring) = evidence_message in 
+
+         event TEEPAgent_query_process_evidence(evidence_message);
+
+         let typeTEEPAgent = query_response in
+         let optionTEEPAgent = (tokenTAM,challenge,claims) in
+         let teep_message_TEEPAgent = (typeTEEPAgent,optionTEEPAgent,evidence_message,sign_evidence_message,tc_list) in
+         let sign_teep_message_TEEPAgent = COSE_Sign(teep_message_TEEPAgent,skTEEPAgent) in
+         out(c,(teep_message_TEEPAgent,sign_teep_message_TEEPAgent)); (* if necessary, include sender and receiver in messsage *)
+
+        event TEEPAgent_query_process_end_arity2(tokenTAM,challenge);
+        event TEEPAgent_query_process_end_arity1(challenge);
+        event TEEP_Agent_query_process_end
+    )
+    |
+    (    
+      (* teep-success/error *)
+        event TEEP_Agent_update_process_start;
+
+         in(c,teep_and_suit_sign_and_message_TAM:bitstring); 
+         let (teep_sign_and_message_TAM:bitstring,suit_sign_and_message_TAM:bitstring) = teep_and_suit_sign_and_message_TAM in
+
+         let (teep_message_TAM:bitstring,sign_teep_message_TAM:bitstring) = teep_sign_and_message_TAM in
+         if COSE_Verif(sign_teep_message_TAM,teep_message_TAM,pkTAM) then
+         let (typeTAM:bitstring,optionTAM:bitstring,TCSigner_message:bitstring,sign_TCSigner_message:bitstring) = teep_message_TAM in
+         if typeTAM = teep_update then
+
+         let (tokenTAM:bitstring,challenge:bitstring) = optionTAM in
+         (* may be included in SUIT Report, Manifest, Attestation Result, Evidence, EAT, named Nonce, (Challenge) *)
+
+        event TEEPAgent_update_process_start_arity2(tokenTAM,challenge);
+        event TEEPAgent_update_process_start_arity1(challenge);
+
+         if COSE_Verif(sign_TCSigner_message,TCSigner_message,pkAuthor) then
+         let (TC:bitstring,TC_seq_nr:bitstring,TC_manifest:bitstring) = TCSigner_message in
+
+        event TC_successfully_installed(TCSigner_message);
+
+         let (suit_message_TAM:bitstring,sign_suit_message_TAM:bitstring) = suit_sign_and_message_TAM in
+         if COSE_Verif(sign_suit_message_TAM,suit_message_TAM,pkTAM) then
+         let (encrypted_cek_TEEPAgent:bitstring,encrypted_iot_secret_TEEPAgent:bitstring) = suit_message_TAM in
+         let plain_cek_TEEPAgent:key = COSE_Decrypt_KEM(encrypted_cek_TEEPAgent,skTEEPAgent) in
+         (* let plain_iot_secret_TEEPAgent:bitstring = dec(encrypted_iot_secret_TEEPAgent,plain_cek_TEEPAgent) in *)
+         let plain_iot_secret_TEEPAgent = dec(encrypted_iot_secret_TEEPAgent,plain_cek_TEEPAgent) in
+         (* this branch means that the processing of iot_secret is complete *)
+
+         let mac_challenge = mac(challenge,psk) in
+         let enc_challenge = enc(challenge,psk) in
+         out(c_Attester,(enc_challenge,mac_challenge)); (* or private channel *)       
+
+         in(c_Attester,sign_and_message_Attester:bitstring);
+         let (enc_evidence_message:bitstring,sign_evidence_message:bitstring) = sign_and_message_Attester in 
+         let evidence_message:bitstring = dec(enc_evidence_message,psk) in 
+         if COSE_Verif(sign_evidence_message,evidence_message,pkAttester) then (* not in scope *)
+         let (=challenge,claims:bitstring) = evidence_message in
+
+         event TEEPAgent_update_process_evidence(evidence_message);
+
+         let typeTEEPAgent = teep_success in
+         (* let typeTEEPAgent = teep_error in *)
+         let optionTEEPAgent = (tokenTAM,challenge,claims) in
+         let teep_message_TEEPAgent = (typeTEEPAgent,optionTEEPAgent,evidence_message,sign_evidence_message) in
+         let sign_teep_message_TEEPAgent = COSE_Sign(teep_message_TEEPAgent,skTEEPAgent) in
+         out(c,(teep_message_TEEPAgent,sign_teep_message_TEEPAgent)); (* if necessary, include sender and receiver in messsage *)
+
+        event TEEPAgent_update_process_end_arity2(tokenTAM,challenge);
+        event TEEPAgent_update_process_end_arity1(challenge);
+        event TEEP_Agent_update_process_end
+    ).
+
+process 
+	new psk: key; (* for SE communication *)
+	new skTAM: skey;
+	let pkTAM = pk(skTAM) in
+	out(c, pkTAM);
+	new skTEEPAgent: skey;
+	let pkTEEPAgent = pk(skTEEPAgent) in
+	out(c, pkTEEPAgent);
+	new skAuthor: skey;
+	let pkAuthor = pk(skAuthor) in
+	out(c, pkAuthor);
+	new skAttester: skey;
+	let pkAttester = pk(skAttester) in
+	out(c, pkAttester);
+	new skVerifier: skey;
+	let pkVerifier = pk(skVerifier) in
+	out(c, pkVerifier);
+
+        out(ch_Author, query_request); (* normal start *)
+        out(ch_Author, Author_update_start); 
+        (* out(ch_TAM_Author, teep_update); *)
+        (* in principle, the trigger for this control sequence is only for TAM *)
+        (* out(ch_TEEPAgent_ctrl, query_response); *)
+        (* out(ch_TEEPAgent_ctrl, teep_success); *)
+        (* out(ch_TEEPAgent_ctrl, teep_error); *)
+
+	((!TAM_process(skTAM, pkTAM, pkTEEPAgent, pkAuthor, pkAttester, pkVerifier)) | (!TEEP_Agent_process(psk, skTEEPAgent, pkTEEPAgent, pkTAM, pkAttester, pkAuthor))  | (!Verifier_process(skVerifier, pkTAM, pkAttester, pkVerifier)) | (!Attester_process(psk, skAttester, pkAttester)) | (!TCSigner_process(skAuthor, pkTAM, pkAuthor)))
+
