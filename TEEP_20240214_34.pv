@@ -51,7 +51,8 @@ fun mac(bitstring, key): bitstring.
 reduc forall m:bitstring, k:key; checkmac(mac(m,k),m,k) = true.
 
 
-(* query whether iot_secret is secret *) (* not in scope of Cory's draft *)
+(* query whether iot_secret is secret *)
+(* not in scope of the draft, A Usable Formal Methods Sample Problem from TEEP draft-mt-ufmrg-teep-sample-00 *)
 (* secret includes firmware image, config info, personalization data *)
 free iot_secret: bitstring [private].
 query attacker(iot_secret).
@@ -259,10 +260,6 @@ query inj-event(TAM_update_process_end) ==> inj-event(TEEP_Agent_update_process_
 
 query event(TAM_update_process_end) ==> event(TAM_update_process_start).
 query inj-event(TAM_update_process_end) ==> inj-event(TAM_update_process_start).
-
-
-free plain_iot_secret_TEEPAgent: bitstring [private].
-query attacker(plain_iot_secret_TEEPAgent).
 
 
 
