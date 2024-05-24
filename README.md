@@ -15,7 +15,7 @@ ProVerif & Tamarin Prover is the formal verification tools to analyze the securi
 - I addressed the issue according to the advice in IETF118.
   Specifically, I fixed the protocol and the communication channel 
   which is not likely to cause the result "cannot be proved".
-- Please see the [results](TEEP_UFMRG_ProVerif_20240214_10_3.pdf) for the verification results in detail.
+- Please see the [results](TEEP_UFMRG_ProVerif_20240524_10_6.pdf) for the verification results in detail.
 
 I hope this code to be treated as an instance of the draft above.
 
